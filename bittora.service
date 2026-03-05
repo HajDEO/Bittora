@@ -1,0 +1,35 @@
+[Unit]
+Description=Bittora Torrent Manager
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bittora
+Group=bittora
+WorkingDirectory=/opt/bittora/backend
+ExecStart=/opt/bittora/start.sh
+Restart=always
+RestartSec=5
+
+Environment=BITTORA_PORT=8080
+Environment=BITTORA_LANG=sk
+Environment=BITTORA_DOWNLOADS=/srv/bittora/downloads
+Environment=BITTORA_DATA=/var/lib/bittora
+
+StandardOutput=append:/var/log/bittora/bittora.log
+StandardError=append:/var/log/bittora/bittora-error.log
+
+# Resource limits
+MemoryMax=2G
+MemoryHigh=1536M
+CPUQuota=300%
+TasksMax=256
+OOMPolicy=stop
+
+# Security (no namespace isolation - needed for mount operations)
+NoNewPrivileges=no
+PrivateTmp=no
+
+[Install]
+WantedBy=multi-user.target

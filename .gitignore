@@ -1,0 +1,44 @@
+# Config (contains secrets)
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Database
+*.db
+*.db-journal
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Shell profiles
+.bash_history
+.bash_profile
+.bashrc
+.profile
+
+# Testing
+backend/stress_test.py
