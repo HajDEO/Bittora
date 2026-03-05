@@ -49,7 +49,8 @@ echo ""
 if [ "$MODE" = "update" ]; then
     log "Pulling latest code..."
     cd "$BITTORA_DIR"
-    git pull --ff-only || { warn "Git pull failed — try manual merge"; exit 1; }
+    git fetch origin
+    git reset --hard origin/main
 
     log "Installing Python dependencies..."
     pip3 install -q -r requirements.txt 2>/dev/null || pip install -q -r requirements.txt
