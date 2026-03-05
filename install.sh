@@ -53,9 +53,7 @@ if [ "$MODE" = "update" ]; then
     git reset --hard origin/main
 
     log "Installing Python dependencies..."
-    pip3 install -q -r requirements.txt 2>/dev/null \
-        || pip3 install -q -r requirements.txt --break-system-packages 2>/dev/null \
-        || pip install -q -r requirements.txt --break-system-packages
+    PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install -q -r requirements.txt
 
     log "Building frontend..."
     cd "$BITTORA_DIR/frontend"
@@ -122,8 +120,7 @@ fi
 
 # ── 5. Python dependencies ─────────────────────────────────────────
 log "Installing Python dependencies..."
-pip3 install -q -r "$BITTORA_DIR/requirements.txt" 2>/dev/null \
-    || pip install -q -r "$BITTORA_DIR/requirements.txt" --break-system-packages
+PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install -q -r "$BITTORA_DIR/requirements.txt"
 
 # ── 6. Frontend build ──────────────────────────────────────────────
 log "Building frontend..."
