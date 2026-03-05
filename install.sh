@@ -53,7 +53,9 @@ if [ "$MODE" = "update" ]; then
     git reset --hard origin/main
 
     log "Installing Python dependencies..."
-    pip3 install -q -r requirements.txt 2>/dev/null || pip install -q -r requirements.txt
+    pip3 install -q -r requirements.txt 2>/dev/null \
+        || pip3 install -q -r requirements.txt --break-system-packages 2>/dev/null \
+        || pip install -q -r requirements.txt --break-system-packages
 
     log "Building frontend..."
     cd "$BITTORA_DIR/frontend"
