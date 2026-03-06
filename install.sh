@@ -213,6 +213,69 @@ install_service() {
     systemctl daemon-reload
 }
 
+fix_lxc_permissions() {
+    local in_lxc=0
+
+    # Detect LXC: systemd-detect-virt
+    if command -v systemd-detect-virt &>/dev/null; then
+        local virt_type
+        virt_type=$(systemd-detect-virt --container 2>/dev/null || true)
+        [ "$virt_type" = "lxc" ] || [ "$virt_type" = "lxc-libvirt" ] && in_lxc=1
+    fi
+    # Detect LXC: /proc/1/environ
+    if [ "$in_lxc" -eq 0 ] && [ -r /proc/1/environ ]; then
+        tr '\0' '\n' < /proc/1/environ 2>/dev/null | grep -q '^container=lxc' && in_lxc=1
+    fi
+    # Detect LXC: filesystem markers
+    if [ "$in_lxc" -eq 0 ]; then
+        [ -d /run/lxc ] || [ -d /.lxcfs ] || [ -f /dev/lxc ] && in_lxc=1
+    fi
+
+    if [ "$in_lxc" -eq 0 ]; then
+        [ "$VERBOSE" -eq 1 ] && info "Not in LXC — skipping mount permission fix"
+        return 0
+    fi
+
+    log "LXC container detected — checking mount permissions..."
+
+    [ ! -d "$MOUNT_BASE" ] && return 0
+
+    local has_mounts=0
+    for dir in "$MOUNT_BASE"/*/; do [ -d "$dir" ] && has_mounts=1 && break; done
+    [ "$has_mounts" -eq 0 ] && return 0
+
+    local bittora_groups fixed=0
+    bittora_groups=$(id -G "$BITTORA_USER" 2>/dev/null || echo "")
+    [ -z "$bittora_groups" ] && return 0
+
+    for dir in "$MOUNT_BASE"/*/; do
+        [ -d "$dir" ] || continue
+        local mount_gid
+        mount_gid=$(stat -c %g "$dir" 2>/dev/null || echo "")
+        [ -z "$mount_gid" ] && continue
+        [ "$mount_gid" -eq 0 ] 2>/dev/null && continue
+
+        local already=0
+        for gid in $bittora_groups; do [ "$gid" = "$mount_gid" ] && already=1 && break; done
+        [ "$already" -eq 1 ] && continue
+
+        local group_name
+        group_name=$(getent group "$mount_gid" 2>/dev/null | cut -d: -f1 || echo "")
+        if [ -z "$group_name" ]; then
+            group_name="lxc_mount_${mount_gid}"
+            log "Creating group '$group_name' (GID $mount_gid)..."
+            groupadd -g "$mount_gid" "$group_name"
+        fi
+
+        log "Adding $BITTORA_USER to group '$group_name' (GID $mount_gid) for $(basename "$dir")..."
+        usermod -aG "$group_name" "$BITTORA_USER"
+        fixed=$((fixed + 1))
+        bittora_groups=$(id -G "$BITTORA_USER" 2>/dev/null || echo "$bittora_groups")
+    done
+
+    [ "$fixed" -gt 0 ] && log "Fixed $fixed mount permission(s) for LXC"
+}
+
 ensure_config() {
     if [ ! -f "$CONFIG_FILE" ]; then
         log "Generating config.json..."
@@ -281,6 +344,7 @@ if [ "$MODE" = "update" ]; then
     install_python_deps
     build_frontend
     ensure_directories
+    fix_lxc_permissions
     ensure_config
     set_permissions
     install_sudoers
@@ -331,6 +395,9 @@ build_frontend
 
 # ── 7. Directories ─────────────────────────────────────────────────
 ensure_directories
+
+# ── 7b. LXC mount permissions ─────────────────────────────────────
+fix_lxc_permissions
 
 # ── 8. Generate config ─────────────────────────────────────────────
 ensure_config
