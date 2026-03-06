@@ -29,7 +29,7 @@ A lightweight, self-hosted torrent manager with a modern web UI. Built with Fast
 
 ## Quick Install
 
-On a fresh Ubuntu/Debian server:
+On a fresh Ubuntu 22.04+ or Debian 12+ server:
 
 ```bash
 git clone https://github.com/HajDEO/Bittora.git /opt/bittora
@@ -56,7 +56,7 @@ The installer detects an existing installation and runs in update mode: pulls la
 ```bash
 # 1. System deps
 sudo apt update
-sudo apt install python3 python3-pip python3-libtorrent git curl smbclient nfs-common cifs-utils
+sudo apt install python3 python3-pip python3-libtorrent git curl ca-certificates gnupg smbclient nfs-common cifs-utils
 
 # 2. Node.js 22.x
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -

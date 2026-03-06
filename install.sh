@@ -2,6 +2,7 @@
 set -e
 
 # Bittora Installer
+# Supports: Ubuntu 22.04+, Debian 12+
 # Usage: sudo bash install.sh
 
 BITTORA_DIR="/opt/bittora"
@@ -25,16 +26,62 @@ err()  { echo -e "${RED}[x]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[i]${NC} $1"; }
 
 # ══════════════════════════════════════════════════════════════════
+# PRE-FLIGHT CHECKS
+# ══════════════════════════════════════════════════════════════════
+
+if [ "$EUID" -ne 0 ]; then
+    err "Please run as root: sudo bash install.sh"
+fi
+
+# Detect distro
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DISTRO_ID="$ID"
+    DISTRO_VER="$VERSION_ID"
+else
+    DISTRO_ID="unknown"
+    DISTRO_VER=""
+fi
+
+case "$DISTRO_ID" in
+    ubuntu|debian)
+        info "Detected: $PRETTY_NAME"
+        ;;
+    *)
+        warn "Unsupported distro: $DISTRO_ID — this installer is designed for Ubuntu/Debian"
+        warn "Continuing anyway, but some packages may not be available"
+        ;;
+esac
+
+# ══════════════════════════════════════════════════════════════════
 # SHARED FUNCTIONS
 # ══════════════════════════════════════════════════════════════════
 
 install_system_deps() {
     log "Installing system dependencies..."
     apt-get update -qq
-    apt-get install -y -qq \
-        python3 python3-pip python3-venv python3-libtorrent \
-        git curl wget smbclient nfs-common cifs-utils \
-        > /dev/null 2>&1
+
+    # Base packages needed before anything else (minimal Debian may lack these)
+    apt-get install -y -qq ca-certificates curl gnupg sudo > /dev/null 2>&1
+
+    # Core application dependencies
+    local PKGS="python3 python3-pip python3-venv git wget smbclient nfs-common cifs-utils"
+
+    # python3-libtorrent: available on Ubuntu 22.04+ and Debian 12+
+    if apt-cache show python3-libtorrent &>/dev/null; then
+        PKGS="$PKGS python3-libtorrent"
+    else
+        warn "python3-libtorrent not found in repos — will try pip fallback"
+    fi
+
+    apt-get install -y -qq $PKGS > /dev/null 2>&1
+
+    # Fallback: if libtorrent not available via apt, try pip
+    if ! python3 -c "import libtorrent" &>/dev/null; then
+        warn "Installing libtorrent via pip (no system package found)..."
+        PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q libtorrent || \
+            err "Could not install libtorrent. Please install python3-libtorrent manually."
+    fi
 }
 
 install_node() {
@@ -49,6 +96,12 @@ install_node() {
     log "Installing Node.js ${NODE_MAJOR}.x..."
     curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - > /dev/null 2>&1
     apt-get install -y -qq nodejs > /dev/null 2>&1
+
+    # Verify installation
+    if ! command -v node &>/dev/null; then
+        err "Node.js installation failed. Check your internet connection and try again."
+    fi
+    info "Node.js installed: $(node -v)"
 }
 
 install_python_deps() {
@@ -99,11 +152,6 @@ install_service() {
     cp "$BITTORA_DIR/bittora.service" "$SERVICE_FILE"
     systemctl daemon-reload
 }
-
-# ── Check root ──────────────────────────────────────────────────────
-if [ "$EUID" -ne 0 ]; then
-    err "Please run as root: sudo bash install.sh"
-fi
 
 # ── Detect mode ─────────────────────────────────────────────────────
 if [ -f "$BITTORA_DIR/backend/main.py" ]; then
