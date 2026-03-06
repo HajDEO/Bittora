@@ -53,7 +53,7 @@ install_node() {
 
 install_python_deps() {
     log "Installing Python dependencies..."
-    PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q -r "$BITTORA_DIR/requirements.txt"
+    PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q --ignore-installed -r "$BITTORA_DIR/requirements.txt"
 }
 
 build_frontend() {

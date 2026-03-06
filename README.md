@@ -66,7 +66,7 @@ sudo apt install nodejs
 sudo git clone https://github.com/HajDEO/Bittora.git /opt/bittora
 
 # 4. Python deps
-PIP_BREAK_SYSTEM_PACKAGES=1 sudo python3 -m pip install -r /opt/bittora/requirements.txt
+PIP_BREAK_SYSTEM_PACKAGES=1 sudo python3 -m pip install --ignore-installed -r /opt/bittora/requirements.txt
 
 # 5. Frontend
 cd /opt/bittora/frontend
