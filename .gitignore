@@ -42,3 +42,6 @@ Thumbs.db
 
 # Testing
 backend/stress_test.py
+
+# Press / Landing page
+press/

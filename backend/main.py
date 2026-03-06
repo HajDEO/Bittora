@@ -565,6 +565,28 @@ def _resolve_destination(rec) -> str:
             pass
     return d
 
+def _completed_torrent_dict(rec) -> dict:
+    """Build torrent dict from a DB record for completed torrents not in active_handles."""
+    return {
+        "info_hash":     rec.info_hash,
+        "name":          rec.name or "Unknown",
+        "progress":      100.0,
+        "download_rate": 0,
+        "upload_rate":   0,
+        "num_seeds":     0,
+        "num_peers":     0,
+        "state":         "completed",
+        "total_size":    0,
+        "total_done":    0,
+        "eta":           -1,
+        "ratio":         0,
+        "destination":   _resolve_destination(rec),
+        "category":      rec.category or "",
+        "added_at":      rec.added_at.isoformat() if rec.added_at else None,
+        "download_limit": 0,
+        "upload_limit":   0,
+    }
+
 def torrent_dict(ih: str, h: lt.torrent_handle, rec=None) -> dict:
     s = h.status()
     dl  = round(s.download_rate / 1024 / 1024, 2)
@@ -993,7 +1015,11 @@ async def add_torrent(user: CurrentUser, db: Session = Depends(get_db),
 @app.get("/api/torrents")
 async def list_torrents(user: CurrentUser, db: Session = Depends(get_db)):
     recs = {r.info_hash: r for r in db.query(TorrentRecord).all()}
-    return [torrent_dict(ih, h, recs.get(ih)) for ih, h in active_handles.items()]
+    result = [torrent_dict(ih, h, recs.get(ih)) for ih, h in active_handles.items()]
+    for ih, rec in recs.items():
+        if ih not in active_handles and rec.completed_at is not None:
+            result.append(_completed_torrent_dict(rec))
+    return result
 
 @app.post("/api/torrents/{info_hash}/pause")
 async def pause_torrent(info_hash: str, user: CurrentUser):
@@ -2079,6 +2105,12 @@ def _build_ws_payload() -> dict:
             torrents.append(torrent_dict(ih, h, recs.get(ih)))
         except Exception:
             pass
+    for ih, rec in recs.items():
+        if ih not in active_handles and rec.completed_at is not None:
+            try:
+                torrents.append(_completed_torrent_dict(rec))
+            except Exception:
+                pass
     return {"type": "update", "torrents": torrents}
 
 
