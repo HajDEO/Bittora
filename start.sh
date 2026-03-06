@@ -2,6 +2,11 @@
 # Bittora startup script
 CONFIG="/opt/bittora/config.json"
 
+if [ ! -f "$CONFIG" ]; then
+    echo "ERROR: $CONFIG not found. Run: sudo bash /opt/bittora/install.sh"
+    exit 1
+fi
+
 export BITTORA_PORT=$(python3 -c "import json; print(json.load(open('$CONFIG'))['port'])")
 export BITTORA_LANG=$(python3 -c "import json; print(json.load(open('$CONFIG'))['lang'])")
 export BITTORA_DOWNLOADS=$(python3 -c "import json; print(json.load(open('$CONFIG'))['download_dir'])")

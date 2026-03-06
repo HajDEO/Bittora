@@ -213,6 +213,25 @@ install_service() {
     systemctl daemon-reload
 }
 
+ensure_config() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log "Generating config.json..."
+        SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        cat > "$CONFIG_FILE" <<CONF
+{
+    "port": 8080,
+    "lang": "en",
+    "download_dir": "/srv/bittora/downloads",
+    "data_dir": "/var/lib/bittora",
+    "log_dir": "/var/log/bittora",
+    "secret": "$SECRET"
+}
+CONF
+    else
+        [ "$VERBOSE" -eq 1 ] && info "config.json already exists — not overwriting"
+    fi
+}
+
 print_info() {
     local PORT=8080
     if [ -f "$CONFIG_FILE" ]; then
@@ -261,6 +280,7 @@ if [ "$MODE" = "update" ]; then
     install_python_deps
     build_frontend
     ensure_directories
+    ensure_config
     set_permissions
     install_sudoers
     install_service
@@ -312,22 +332,7 @@ build_frontend
 ensure_directories
 
 # ── 8. Generate config ─────────────────────────────────────────────
-if [ ! -f "$CONFIG_FILE" ]; then
-    log "Generating config.json..."
-    SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    cat > "$CONFIG_FILE" <<CONF
-{
-    "port": 8080,
-    "lang": "en",
-    "download_dir": "/srv/bittora/downloads",
-    "data_dir": "/var/lib/bittora",
-    "log_dir": "/var/log/bittora",
-    "secret": "$SECRET"
-}
-CONF
-else
-    warn "config.json already exists — not overwriting"
-fi
+ensure_config
 
 # ── 9. Permissions ──────────────────────────────────────────────────
 set_permissions
