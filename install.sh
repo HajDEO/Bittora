@@ -11,6 +11,7 @@ CONFIG_FILE="$BITTORA_DIR/config.json"
 SERVICE_FILE="/etc/systemd/system/bittora.service"
 SUDOERS_FILE="/etc/sudoers.d/bittora"
 MOUNT_BASE="/mnt/bittora"
+NODE_MAJOR=22
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,6 +23,82 @@ log()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[x]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[i]${NC} $1"; }
+
+# ══════════════════════════════════════════════════════════════════
+# SHARED FUNCTIONS
+# ══════════════════════════════════════════════════════════════════
+
+install_system_deps() {
+    log "Installing system dependencies..."
+    apt-get update -qq
+    apt-get install -y -qq \
+        python3 python3-pip python3-venv python3-libtorrent \
+        git curl wget smbclient nfs-common cifs-utils \
+        > /dev/null 2>&1
+}
+
+install_node() {
+    if command -v node &> /dev/null; then
+        NODE_VER=$(node -v | sed 's/v//' | cut -d. -f1)
+        if [ "$NODE_VER" -ge 18 ] 2>/dev/null; then
+            info "Node.js already installed: $(node -v)"
+            return
+        fi
+        warn "Node.js $(node -v) is too old (need 18+), upgrading..."
+    fi
+    log "Installing Node.js ${NODE_MAJOR}.x..."
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - > /dev/null 2>&1
+    apt-get install -y -qq nodejs > /dev/null 2>&1
+}
+
+install_python_deps() {
+    log "Installing Python dependencies..."
+    PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q -r "$BITTORA_DIR/requirements.txt"
+}
+
+build_frontend() {
+    log "Building frontend..."
+    cd "$BITTORA_DIR/frontend"
+    npm install --silent
+    npm run build
+}
+
+ensure_directories() {
+    log "Ensuring directories exist..."
+    mkdir -p /srv/bittora/downloads
+    mkdir -p /var/lib/bittora
+    mkdir -p /var/log/bittora
+    mkdir -p "$MOUNT_BASE"
+}
+
+set_permissions() {
+    log "Setting permissions..."
+    chown -R "$BITTORA_USER:$BITTORA_GROUP" "$BITTORA_DIR"
+    chown -R "$BITTORA_USER:$BITTORA_GROUP" /srv/bittora
+    chown -R "$BITTORA_USER:$BITTORA_GROUP" /var/lib/bittora
+    chown -R "$BITTORA_USER:$BITTORA_GROUP" /var/log/bittora
+    chown "$BITTORA_USER:$BITTORA_GROUP" "$MOUNT_BASE"
+    chmod +x "$BITTORA_DIR/start.sh"
+}
+
+install_sudoers() {
+    log "Configuring sudoers for mount operations..."
+    cat > "$SUDOERS_FILE" <<'SUDOERS'
+# Bittora mount/umount permissions
+bittora ALL=(root) NOPASSWD: /usr/bin/mkdir -p /mnt/bittora/*
+bittora ALL=(root) NOPASSWD: /usr/bin/mount -t cifs * /mnt/bittora/*
+bittora ALL=(root) NOPASSWD: /usr/bin/mount -t nfs * /mnt/bittora/*
+bittora ALL=(root) NOPASSWD: /usr/bin/umount /mnt/bittora/*
+SUDOERS
+    chmod 440 "$SUDOERS_FILE"
+    visudo -cf "$SUDOERS_FILE" > /dev/null 2>&1 || { rm "$SUDOERS_FILE"; err "Invalid sudoers syntax!"; }
+}
+
+install_service() {
+    log "Installing systemd service..."
+    cp "$BITTORA_DIR/bittora.service" "$SERVICE_FILE"
+    systemctl daemon-reload
+}
 
 # ── Check root ──────────────────────────────────────────────────────
 if [ "$EUID" -ne 0 ]; then
@@ -52,20 +129,14 @@ if [ "$MODE" = "update" ]; then
     git fetch origin
     git reset --hard origin/main
 
-    log "Installing Python dependencies..."
-    PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install -q -r requirements.txt
-
-    log "Building frontend..."
-    cd "$BITTORA_DIR/frontend"
-    npm install --silent
-    npm run build
-
-    log "Setting permissions..."
-    chown -R "$BITTORA_USER:$BITTORA_GROUP" "$BITTORA_DIR"
-
-    log "Updating systemd service..."
-    cp "$BITTORA_DIR/bittora.service" "$SERVICE_FILE"
-    systemctl daemon-reload
+    install_system_deps
+    install_node
+    install_python_deps
+    build_frontend
+    ensure_directories
+    set_permissions
+    install_sudoers
+    install_service
 
     log "Restarting Bittora..."
     systemctl restart bittora
@@ -81,22 +152,10 @@ fi
 # ════════════════════════════════════════════════════════════════════
 
 # ── 1. System dependencies ──────────────────────────────────────────
-log "Installing system dependencies..."
-apt-get update -qq
-apt-get install -y -qq \
-    python3 python3-pip python3-venv python3-libtorrent \
-    git curl wget smbclient nfs-common cifs-utils \
-    > /dev/null 2>&1
+install_system_deps
 
-# ── 2. Node.js (if not installed) ──────────────────────────────────
-if ! command -v node &> /dev/null; then
-    log "Installing Node.js 22.x..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
-    apt-get install -y -qq nodejs > /dev/null 2>&1
-else
-    NODE_VER=$(node -v)
-    info "Node.js already installed: $NODE_VER"
-fi
+# ── 2. Node.js ──────────────────────────────────────────────────────
+install_node
 
 # ── 3. Create user ─────────────────────────────────────────────────
 if ! id "$BITTORA_USER" &>/dev/null; then
@@ -119,21 +178,13 @@ else
 fi
 
 # ── 5. Python dependencies ─────────────────────────────────────────
-log "Installing Python dependencies..."
-PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install -q -r "$BITTORA_DIR/requirements.txt"
+install_python_deps
 
 # ── 6. Frontend build ──────────────────────────────────────────────
-log "Building frontend..."
-cd "$BITTORA_DIR/frontend"
-npm install --silent
-npm run build
+build_frontend
 
 # ── 7. Directories ─────────────────────────────────────────────────
-log "Creating directories..."
-mkdir -p /srv/bittora/downloads
-mkdir -p /var/lib/bittora
-mkdir -p /var/log/bittora
-mkdir -p "$MOUNT_BASE"
+ensure_directories
 
 # ── 8. Generate config ─────────────────────────────────────────────
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -154,30 +205,13 @@ else
 fi
 
 # ── 9. Permissions ──────────────────────────────────────────────────
-log "Setting permissions..."
-chown -R "$BITTORA_USER:$BITTORA_GROUP" "$BITTORA_DIR"
-chown -R "$BITTORA_USER:$BITTORA_GROUP" /srv/bittora
-chown -R "$BITTORA_USER:$BITTORA_GROUP" /var/lib/bittora
-chown -R "$BITTORA_USER:$BITTORA_GROUP" /var/log/bittora
-chown "$BITTORA_USER:$BITTORA_GROUP" "$MOUNT_BASE"
-chmod +x "$BITTORA_DIR/start.sh"
+set_permissions
 
 # ── 10. Sudoers for mount/umount ────────────────────────────────────
-log "Configuring sudoers for mount operations..."
-cat > "$SUDOERS_FILE" <<'SUDOERS'
-# Bittora mount/umount permissions
-bittora ALL=(root) NOPASSWD: /usr/bin/mkdir -p /mnt/bittora/*
-bittora ALL=(root) NOPASSWD: /usr/bin/mount -t cifs * /mnt/bittora/*
-bittora ALL=(root) NOPASSWD: /usr/bin/mount -t nfs * /mnt/bittora/*
-bittora ALL=(root) NOPASSWD: /usr/bin/umount /mnt/bittora/*
-SUDOERS
-chmod 440 "$SUDOERS_FILE"
-visudo -cf "$SUDOERS_FILE" > /dev/null 2>&1 || { rm "$SUDOERS_FILE"; err "Invalid sudoers syntax!"; }
+install_sudoers
 
 # ── 11. Systemd service ────────────────────────────────────────────
-log "Installing systemd service..."
-cp "$BITTORA_DIR/bittora.service" "$SERVICE_FILE"
-systemctl daemon-reload
+install_service
 systemctl enable bittora
 systemctl start bittora
 

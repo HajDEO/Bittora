@@ -46,7 +46,7 @@ cd /opt/bittora
 sudo bash install.sh
 ```
 
-The installer detects an existing installation and runs in update mode: pulls latest code, rebuilds frontend, and restarts the service. Your `config.json` is never overwritten.
+The installer detects an existing installation and runs in update mode: pulls latest code, ensures all system dependencies are present, rebuilds frontend, updates sudoers and systemd service, and restarts. Your `config.json` is never overwritten.
 
 ## Manual Install
 
@@ -66,7 +66,7 @@ sudo apt install nodejs
 sudo git clone https://github.com/HajDEO/Bittora.git /opt/bittora
 
 # 4. Python deps
-sudo pip3 install -r /opt/bittora/requirements.txt
+PIP_BREAK_SYSTEM_PACKAGES=1 sudo python3 -m pip install -r /opt/bittora/requirements.txt
 
 # 5. Frontend
 cd /opt/bittora/frontend
