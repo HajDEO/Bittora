@@ -1,7 +1,6 @@
 [Unit]
 Description=Bittora Torrent Manager
 After=network.target
-Wants=network-online.target
 
 [Service]
 Type=simple
