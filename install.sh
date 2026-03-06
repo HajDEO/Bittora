@@ -213,6 +213,24 @@ install_service() {
     systemctl daemon-reload
 }
 
+print_info() {
+    local PORT=8080
+    if [ -f "$CONFIG_FILE" ]; then
+        PORT=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('port', 8080))" 2>/dev/null || echo 8080)
+    fi
+    local IP=$(hostname -I | awk '{print $1}')
+    echo ""
+    echo -e "  Web UI:    ${CYAN}http://${IP}:${PORT}${NC}"
+    echo -e "  Username:  ${YELLOW}admin${NC}"
+    echo -e "  Password:  ${YELLOW}admin${NC}"
+    echo -e "  (Change password on first login)"
+    echo ""
+    echo -e "  Config:    $CONFIG_FILE"
+    echo -e "  Logs:      /var/log/bittora/"
+    echo -e "  Service:   systemctl status bittora"
+    echo ""
+}
+
 # ── Detect mode ─────────────────────────────────────────────────────
 if [ -f "$BITTORA_DIR/backend/main.py" ]; then
     MODE="update"
@@ -251,7 +269,10 @@ if [ "$MODE" = "update" ]; then
     systemctl restart bittora
 
     echo ""
-    echo -e "${GREEN}Update complete!${NC}"
+    echo -e "${GREEN}════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  Update complete!${NC}"
+    echo -e "${GREEN}════════════════════════════════════════${NC}"
+    print_info
     systemctl status bittora --no-pager -l || true
     exit 0
 fi
@@ -324,15 +345,5 @@ echo ""
 echo -e "${GREEN}════════════════════════════════════════${NC}"
 echo -e "${GREEN}  Bittora installed successfully!${NC}"
 echo -e "${GREEN}════════════════════════════════════════${NC}"
-echo ""
-echo -e "  Web UI:    ${CYAN}http://$(hostname -I | awk '{print $1}'):8080${NC}"
-echo -e "  Username:  ${YELLOW}admin${NC}"
-echo -e "  Password:  ${YELLOW}admin${NC}"
-echo -e "  (You will be asked to change the password on first login)"
-echo ""
-echo -e "  Config:    $CONFIG_FILE"
-echo -e "  Logs:      /var/log/bittora/"
-echo -e "  Service:   systemctl status bittora"
-echo ""
-
+print_info
 systemctl status bittora --no-pager -l || true
