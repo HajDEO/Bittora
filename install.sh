@@ -3,7 +3,7 @@ set -e
 
 # Bittora Installer
 # Supports: Ubuntu 22.04+, Debian 12+
-# Usage: sudo bash install.sh
+# Usage: sudo bash install.sh [-v|--verbose]
 
 BITTORA_DIR="/opt/bittora"
 BITTORA_USER="bittora"
@@ -13,6 +13,7 @@ SERVICE_FILE="/etc/systemd/system/bittora.service"
 SUDOERS_FILE="/etc/sudoers.d/bittora"
 MOUNT_BASE="/mnt/bittora"
 NODE_MAJOR=22
+VERBOSE=0
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,6 +25,43 @@ log()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 err()  { echo -e "${RED}[x]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[i]${NC} $1"; }
+
+# Verbose helpers — redirect output based on verbose flag
+quiet() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        "$@"
+    else
+        "$@" > /dev/null 2>&1
+    fi
+}
+
+apt_install() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        apt-get install -y "$@"
+    else
+        apt-get install -y -qq "$@" > /dev/null 2>&1
+    fi
+}
+
+pip_install() {
+    if [ "$VERBOSE" -eq 1 ]; then
+        PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --root-user-action=ignore --ignore-installed -r "$1"
+    else
+        PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q --root-user-action=ignore --ignore-installed -r "$1"
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════════
+# PARSE ARGUMENTS
+# ══════════════════════════════════════════════════════════════════
+
+for arg in "$@"; do
+    case "$arg" in
+        -v|--verbose)
+            VERBOSE=1
+            ;;
+    esac
+done
 
 # ══════════════════════════════════════════════════════════════════
 # PRE-FLIGHT CHECKS
@@ -53,16 +91,33 @@ case "$DISTRO_ID" in
         ;;
 esac
 
+if [ "$VERBOSE" -eq 1 ]; then
+    info "Verbose mode enabled"
+fi
+
 # ══════════════════════════════════════════════════════════════════
 # SHARED FUNCTIONS
 # ══════════════════════════════════════════════════════════════════
 
+ensure_user() {
+    if ! id "$BITTORA_USER" &>/dev/null; then
+        log "Creating system user '$BITTORA_USER'..."
+        useradd -r -s /usr/sbin/nologin -d /opt/bittora "$BITTORA_USER"
+    else
+        [ "$VERBOSE" -eq 1 ] && info "User '$BITTORA_USER' already exists"
+    fi
+}
+
 install_system_deps() {
     log "Installing system dependencies..."
-    apt-get update -qq
+    if [ "$VERBOSE" -eq 1 ]; then
+        apt-get update
+    else
+        apt-get update -qq
+    fi
 
     # Base packages needed before anything else (minimal Debian may lack these)
-    apt-get install -y -qq ca-certificates curl gnupg sudo > /dev/null 2>&1
+    apt_install ca-certificates curl gnupg sudo
 
     # Core application dependencies
     local PKGS="python3 python3-pip python3-venv git wget smbclient nfs-common cifs-utils"
@@ -74,12 +129,12 @@ install_system_deps() {
         warn "python3-libtorrent not found in repos — will try pip fallback"
     fi
 
-    apt-get install -y -qq $PKGS > /dev/null 2>&1
+    apt_install $PKGS
 
     # Fallback: if libtorrent not available via apt, try pip
     if ! python3 -c "import libtorrent" &>/dev/null; then
         warn "Installing libtorrent via pip (no system package found)..."
-        PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q libtorrent || \
+        PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --root-user-action=ignore libtorrent || \
             err "Could not install libtorrent. Please install python3-libtorrent manually."
     fi
 }
@@ -94,8 +149,8 @@ install_node() {
         warn "Node.js $(node -v) is too old (need 18+), upgrading..."
     fi
     log "Installing Node.js ${NODE_MAJOR}.x..."
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - > /dev/null 2>&1
-    apt-get install -y -qq nodejs > /dev/null 2>&1
+    quiet bash -c "curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash -"
+    apt_install nodejs
 
     # Verify installation
     if ! command -v node &>/dev/null; then
@@ -106,14 +161,19 @@ install_node() {
 
 install_python_deps() {
     log "Installing Python dependencies..."
-    PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -q --ignore-installed -r "$BITTORA_DIR/requirements.txt"
+    pip_install "$BITTORA_DIR/requirements.txt"
 }
 
 build_frontend() {
     log "Building frontend..."
     cd "$BITTORA_DIR/frontend"
-    npm install --silent
-    npm run build
+    if [ "$VERBOSE" -eq 1 ]; then
+        npm install
+        npm run build
+    else
+        npm install --silent
+        npm run build
+    fi
 }
 
 ensure_directories() {
@@ -179,6 +239,7 @@ if [ "$MODE" = "update" ]; then
 
     install_system_deps
     install_node
+    ensure_user
     install_python_deps
     build_frontend
     ensure_directories
@@ -206,12 +267,7 @@ install_system_deps
 install_node
 
 # ── 3. Create user ─────────────────────────────────────────────────
-if ! id "$BITTORA_USER" &>/dev/null; then
-    log "Creating system user '$BITTORA_USER'..."
-    useradd -r -s /usr/sbin/nologin -d /opt/bittora "$BITTORA_USER"
-else
-    info "User '$BITTORA_USER' already exists"
-fi
+ensure_user
 
 # ── 4. Clone or copy repo ──────────────────────────────────────────
 if [ ! -d "$BITTORA_DIR/.git" ]; then
