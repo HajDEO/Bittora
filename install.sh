@@ -271,6 +271,7 @@ echo ""
 if [ "$MODE" = "update" ]; then
     log "Pulling latest code..."
     cd "$BITTORA_DIR"
+    git config --global --add safe.directory "$BITTORA_DIR" 2>/dev/null || true
     git fetch origin
     git reset --hard origin/main
 
