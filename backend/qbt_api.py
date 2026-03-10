@@ -119,8 +119,15 @@ async def qbt_preferences(_=Depends(_qbt_auth)):
         rows = {r.key: r.value for r in db.query(Setting).all()}
         target_ratio = float(rows.get("target_ratio", "0") or "0")
         max_seed_time = _safe_int(rows.get("max_seed_time", "0"))
+        # Report effective save path based on default_storage setting
+        def_storage = rows.get("default_storage", "local") or "local"
+        if def_storage in ("smb", "nfs", "custom"):
+            effective_path = rows.get("download_dir", "") or ""
+            save_path = (effective_path.strip() or DL_DIR).rstrip("/") + "/"
+        else:
+            save_path = DL_DIR + "/"
         return {
-            "save_path": DL_DIR + "/",
+            "save_path": save_path,
             "max_ratio_enabled": target_ratio > 0,
             "max_ratio": target_ratio,
             "max_seeding_time_enabled": max_seed_time > 0,
@@ -401,11 +408,18 @@ async def qbt_add_torrent(request: Request, _=Depends(_qbt_auth),
                            urls: str = Form(None), category: str = Form(""),
                            savepath: str = Form(None), paused: str = Form(None),
                            torrents: Optional[list[UploadFile]] = File(None)):
-    save_dir = savepath or os.path.join(DL_DIR, "incomplete")
+    # Respect default_storage setting (same logic as main API)
+    db = SessionLocal()
+    def_storage = _get_setting_val(db, "default_storage") or "local"
+    if savepath:
+        save_dir = savepath
+    elif def_storage in ("smb", "nfs", "custom"):
+        save_dir = get_dl_dir(def_storage)
+    else:
+        save_dir = os.path.join(DL_DIR, "incomplete")
     os.makedirs(save_dir, exist_ok=True)
     is_paused = paused and paused.lower() in ("true", "1")
     added = 0
-    db = SessionLocal()
     try:
         # Process magnet URLs
         if urls:
@@ -424,7 +438,7 @@ async def qbt_add_torrent(request: Request, _=Depends(_qbt_auth),
                         h.pause()
                     if not db.query(TorrentRecord).filter(TorrentRecord.info_hash == ih).first():
                         db.add(TorrentRecord(info_hash=ih, name=h.name() or "Unknown",
-                                             save_path=save_dir, destination="local",
+                                             save_path=save_dir, destination=def_storage,
                                              category=category, magnet_uri=uri))
                     added += 1
                     fire_webhook("added", {"info_hash": ih, "name": h.name() or "Unknown"})
@@ -445,7 +459,7 @@ async def qbt_add_torrent(request: Request, _=Depends(_qbt_auth),
                         h.pause()
                     if not db.query(TorrentRecord).filter(TorrentRecord.info_hash == ih).first():
                         db.add(TorrentRecord(info_hash=ih, name=info.name(),
-                                             save_path=save_dir, destination="local",
+                                             save_path=save_dir, destination=def_storage,
                                              category=category))
                     added += 1
                     fire_webhook("added", {"info_hash": ih, "name": info.name()})
